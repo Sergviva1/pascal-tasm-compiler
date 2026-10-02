@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Limit",
+    "kind": "const",
+    "type": "integer",
+    "isVar": false,
+    "scope": "global",
+    "value": 10
+  },
+  {
+    "name": "a",
+    "kind": "var",
+    "type": "integer",
+    "isVar": false,
+    "scope": "global",
+    "value": null
+  },
+  {
+    "name": "b",
+    "kind": "var",
+    "type": "integer",
+    "isVar": false,
+    "scope": "global",
+    "value": null
+  },
+  {
+    "name": "flag",
+    "kind": "var",
+    "type": "boolean",
+    "isVar": false,
+    "scope": "global",
+    "value": null
+  },
+  {
+    "name": "Compare",
+    "kind": "proc",
+    "type": null,
+    "isVar": false,
+    "scope": "global",
+    "value": null,
+    "paramsSignature": [
+      {"type": "integer", "isVar": false},
+      {"type": "boolean", "isVar": true}
+    ]
+  },
+  {
+    "name": "x",
+    "kind": "param",
+    "type": "integer",
+    "isVar": false,
+    "scope": "Compare",
+    "value": null
+  },
+  {
+    "name": "result",
+    "kind": "param",
+    "type": "boolean",
+    "isVar": true,
+    "scope": "Compare",
+    "value": null
+  }
+]

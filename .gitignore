@@ -13,6 +13,11 @@ env/
 *.obj
 *.exe
 
+# Но тестовые заглушки в tests/ — часть репозитория (контракт форматов)
+!tests/*.lst
+!tests/*.tree.json
+!tests/*.tab
+
 # IDE / редакторы
 .vscode/
 .idea/

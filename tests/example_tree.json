@@ -1,0 +1,71 @@
+{
+  "node": "Program",
+  "name": "Example",
+  "block": {
+    "node": "Block",
+    "consts": [
+      {"node": "ConstDecl", "name": "Limit", "type": "integer", "value": 10}
+    ],
+    "vars": [
+      {"node": "VarDecl", "names": ["a", "b"], "type": "integer"},
+      {"node": "VarDecl", "names": ["flag"], "type": "boolean"}
+    ],
+    "procs": [
+      {
+        "node": "ProcDecl",
+        "name": "Compare",
+        "params": [
+          {"node": "Param", "names": ["x"], "type": "integer", "isVar": false},
+          {"node": "Param", "names": ["result"], "type": "boolean", "isVar": true}
+        ],
+        "block": {
+          "node": "Block",
+          "consts": [],
+          "vars": [],
+          "procs": [],
+          "body": [
+            {
+              "node": "If",
+              "condition": {
+                "node": "Compare",
+                "op": "<",
+                "left": {"node": "VarRef", "name": "x"},
+                "right": {"node": "ConstRef", "name": "Limit"}
+              },
+              "thenBranch": {
+                "node": "Assign",
+                "target": "result",
+                "expr": {"node": "BoolLiteral", "value": true}
+              },
+              "elseBranch": {
+                "node": "Assign",
+                "target": "result",
+                "expr": {"node": "BoolLiteral", "value": false}
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "body": [
+      {
+        "node": "Assign",
+        "target": "a",
+        "expr": {"node": "IntLiteral", "value": 5}
+      },
+      {
+        "node": "Assign",
+        "target": "b",
+        "expr": {"node": "IntLiteral", "value": 0}
+      },
+      {
+        "node": "ProcCall",
+        "name": "Compare",
+        "args": [
+          {"node": "VarRef", "name": "a"},
+          {"node": "VarRef", "name": "flag"}
+        ]
+      }
+    ]
+  }
+}
