@@ -1,29 +1,48 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
-env/
-
-# Compiler generated outputs (root only — avoids conflicts with tests/)
+# Compiler outputs in the project root (keep tests/ fixtures tracked)
 /tokens.lst
 /tree.json
 /symbols.tab
 /program.asm
 
-# Build artifacts
+# C++ build directories and artifacts
+/build/
+/cmake-build-*/
+/out/
+*.o
 *.obj
 *.exe
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.pdb
+*.ilk
+*.idb
+*.exp
+*.tlog
+
+# In-source CMake artifacts
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/CTestTestfile.cmake
+/Testing/
+/Makefile
+/build.ninja
+/.ninja_deps
+/.ninja_log
+/compile_commands.json
 
 # IDE / editors
 .vscode/
 .idea/
+.vs/
 *.swp
 
 # OS
 .DS_Store
 Thumbs.db
 
-# AI agents (per-repo instructions, not committed)
+# Local agent instructions
 AGENTS.md

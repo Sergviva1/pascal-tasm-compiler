@@ -31,23 +31,24 @@ program.pas → [1. Лексер] → tokens.lst → [2. Синт. анализ�
 
 Все три модуля пишутся на **C++17**.
 
-- Каждый модуль — отдельная программа (`lexer.cpp`, `parser.cpp`, `codegen.cpp`), собирается отдельно и запускается из командной строки.
+- Каждый модуль — отдельная программа (`lexer/main.cpp`, `parser/main.cpp`, `codegen/main.cpp`), собирается отдельно и запускается из командной строки.
 - Для чтения и записи JSON используется библиотека **nlohmann/json** (один заголовочный файл `json.hpp`, лежит в общей папке проекта, устанавливать ничего не нужно). Источник: https://github.com/nlohmann/json (раздел Releases → `json.hpp`).
 - Больше никаких сторонних библиотек не используется, только стандартная библиотека C++.
 - Каждая программа принимает путь к входному файлу через `argv` и пишет результат в выходной файл (имена выходных файлов фиксированы, см. ниже) в текущей директории.
 
 Сборка:
 ```bash
-g++ -std=c++17 -O2 -Wall -o lexer   lexer.cpp
-g++ -std=c++17 -O2 -Wall -o parser  parser.cpp
-g++ -std=c++17 -O2 -Wall -o codegen codegen.cpp
+mkdir -p build
+g++ -std=c++17 -O2 -Wall -I. -o build/lexer.exe lexer/main.cpp
+g++ -std=c++17 -O2 -Wall -I. -o build/parser.exe parser/main.cpp
+g++ -std=c++17 -O2 -Wall -I. -o build/codegen.exe codegen/main.cpp
 ```
 
 Пример вызова всей цепочки из терминала:
 ```bash
-./lexer example.pas                  # → tokens.lst
-./parser tokens.lst                  # → tree.json, symbols.tab
-./codegen tree.json symbols.tab      # → program.asm
+./build/lexer.exe tests/example.pas         # → tokens.lst
+./build/parser.exe tokens.lst               # → tree.json, symbols.tab
+./build/codegen.exe tree.json symbols.tab   # → program.asm
 ```
 
 Финальная сборка `.asm` в исполняемый файл делается уже самим TASM/TLINK (это отдельный шаг).
@@ -431,13 +432,15 @@ end.
 ```
 project/
 ├── json.hpp          # nlohmann/json, один файл, общий для всех
-├── lexer.cpp
-├── parser.cpp
-├── codegen.cpp
-├── example.pas
-└── SPEC.md
+├── CMakeLists.txt    # необязательная сборка через CMake
+├── lexer/main.cpp
+├── parser/main.cpp
+├── codegen/main.cpp
+├── tests/           # example.pas, tokens.lst, tree.json, symbols.tab, fixture_tests.cpp
+├── third_party/     # сведения о зависимости и лицензия
+└── docs/SPEC С++.md
 ```
-`json.hpp` подключается как `#include "json.hpp"` (в кавычках, не в угловых скобках).
+`json.hpp` подключается как `#include "json.hpp"` (в кавычках, не в угловых скобках). При ручной сборке из корня проекта нужен флаг `-I.`, так как исходники находятся в подпапках. В репозитории включена версия nlohmann/json 3.11.3 с MIT-лицензией; сеть при сборке не нужна. Команды выше предназначены для Bash / Git Bash; суффикс `.exe` задан явно и допустим также в Linux. Дополнительные команды CMake и проверки фикстур — в `README.md` и `tests/README.md`.
 
 ### 6.2 Стандарт и флаги
 C++17, компилятор `g++` (или `clang++`), флаги `-std=c++17 -Wall`. Код не должен зависеть от платформы (Windows/Linux).
