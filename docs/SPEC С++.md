@@ -1,5 +1,6 @@
-# ТЗ: компилятор Pascal → TASM (Вариант 10)
+# ТЗ: компилятор Pascal → TASM (Вариант 10), реализация на C++
 
+> Изменения относительно прошлой версии: язык реализации Python → **C++17**, добавлена библиотека **nlohmann/json**, обновлены команды запуска и примеры кода, добавлен раздел 6 (общие правила для C++). **Форматы файлов `tokens.lst`, `tree.json`, `symbols.tab` не менялись.**
 
 ---
 
@@ -28,25 +29,28 @@ program.pas → [1. Лексер] → tokens.lst → [2. Синт. анализ�
 
 ### Язык реализации компилятора
 
-Все три модуля пишутся на **Python 3** (требований к языку реализации в задании нет — выбран Python как самый простой для этой задачи вариант).
+Все три модуля пишутся на **C++17**.
 
-Почему Python, а не C/C++:
-- Встроенная поддержка JSON (`json.load` / `json.dump`) — не нужны сторонние библиотеки для форматов `tokens.lst`, `tree.json`, `symbols.tab`
-- Словари и списки из коробки — не нужно вручную объявлять структуры и управлять памятью
-- Меньше низкоуровневых багов, не относящихся к самой логике компилятора (парсинг, генерация кода)
+- Каждый модуль — отдельная программа (`lexer.cpp`, `parser.cpp`, `codegen.cpp`), собирается отдельно и запускается из командной строки.
+- Для чтения и записи JSON используется библиотека **nlohmann/json** (один заголовочный файл `json.hpp`, лежит в общей папке проекта, устанавливать ничего не нужно). Источник: https://github.com/nlohmann/json (раздел Releases → `json.hpp`).
+- Больше никаких сторонних библиотек не используется, только стандартная библиотека C++.
+- Каждая программа принимает путь к входному файлу через `argv` и пишет результат в выходной файл (имена выходных файлов фиксированы, см. ниже) в текущей директории.
 
-Каждый модуль — это отдельный `.py`-скрипт, который:
-- принимает путь к входному файлу через аргумент командной строки (`sys.argv`) или просто как константу в начале файла на время разработки
-- пишет результат в выходной файл в своей директории
+Сборка:
+```bash
+g++ -std=c++17 -O2 -Wall -o lexer   lexer.cpp
+g++ -std=c++17 -O2 -Wall -o parser  parser.cpp
+g++ -std=c++17 -O2 -Wall -o codegen codegen.cpp
+```
 
 Пример вызова всей цепочки из терминала:
 ```bash
-python lexer.py example.pas          # → tokens.lst
-python parser.py tokens.lst          # → tree.json, symbols.tab
-python codegen.py tree.json symbols.tab   # → program.asm
+./lexer example.pas                  # → tokens.lst
+./parser tokens.lst                  # → tree.json, symbols.tab
+./codegen tree.json symbols.tab      # → program.asm
 ```
 
-Финальная сборка `.asm` в исполняемый файл делается уже самим TASM/TLINK (это отдельный шаг, не Python).
+Финальная сборка `.asm` в исполняемый файл делается уже самим TASM/TLINK (это отдельный шаг).
 
 ---
 
@@ -72,6 +76,8 @@ python codegen.py tree.json symbols.tab   # → program.asm
 ]
 ```
 
+Важно: поле `value` — **всегда строка** (в том числе у `INT_LITERAL`), поле `line` — число.
+
 ### Типы токенов (`type`)
 
 | type | Что сюда попадает |
@@ -85,6 +91,10 @@ python codegen.py tree.json symbols.tab   # → program.asm
 | `EOF` | Конец файла (последний токен, всегда один) |
 
 Комментарии (если поддерживаются — `{ ... }` или `(* ... *)`) в токены не попадают, просто выбрасываются.
+
+**Регистр.** Pascal нечувствителен к регистру: ключевые слова и `true`/`false` распознаются в любом регистре, а в `value` записываются **в нижнем регистре**. Идентификаторы (`IDENT`) записываются как в исходнике.
+
+**Ошибки.** Неизвестный символ → сообщение в `stderr` в формате `lexer: line N: unknown character 'c'` и код возврата `1`.
 
 ---
 
@@ -175,6 +185,12 @@ factor      → ID | INT_LITERAL | BOOL_LITERAL | '(' expr ')' | '-' factor
 {"node": "BoolLiteral", "value": true|false}
 ```
 
+**Типы значений в JSON (важно для C++):**
+- `IntLiteral.value` и `ConstDecl.value` (для integer) — **JSON-число** (`10`), не строка. Парсер конвертирует `"10"` из `tokens.lst` через `std::stoi`.
+- `BoolLiteral.value` и `ConstDecl.value` (для boolean) — **JSON-bool** (`true`/`false`), не строка.
+- `elseBranch` без ветки — JSON `null` (в nlohmann/json это `nullptr`).
+- Пустые списки (`consts`, `vars`, `procs`, `args`, `params`) — это `[]`, а не отсутствие поля. Поля всегда присутствуют.
+
 **Пример:** `if x < 10 then y := true` превращается в:
 
 ```json
@@ -242,6 +258,7 @@ factor      → ID | INT_LITERAL | BOOL_LITERAL | '(' expr ')' | '-' factor
 - `kind` — `"var"` (обычная переменная), `"param"` (параметр процедуры), `"const"`, `"proc"`
 - `isVar` — **важнее всего**: `true`, если это var-параметр (передача по указателю). У всего, кроме параметров, всегда `false`
 - `scope` — `"global"` или имя процедуры, если переменная/параметр локальны для неё
+- `value` — число/bool для констант, `null` для остальных
 - `paramsSignature` — только у процедур, нужно, чтобы проверять правильность вызова (сколько аргументов, каких типов)
 
 ### 2.4 Семантические проверки (делает синт. анализатор)
@@ -253,22 +270,52 @@ factor      → ID | INT_LITERAL | BOOL_LITERAL | '(' expr ')' | '-' factor
 - Присваивание значения константе → ошибка
 - Вызов процедуры с неверным числом или типами аргументов → ошибка
 
+Ошибки: сообщение в `stderr` в формате `parser: line N: <описание>` и код возврата `1` (выходные файлы при ошибке не создаются).
+
 ### 2.5 Как писать парсер (метод рекурсивного спуска)
 
 Одна функция на каждое правило грамматики. Функция смотрит на текущий токен, понимает, что перед ней, и либо обрабатывает его сама, либо вызывает другую функцию для вложенной конструкции.
 
-```python
-def parse_if_stmt(tokens):
-    expect(tokens, 'if')
-    condition = parse_condition(tokens)
-    expect(tokens, 'then')
-    then_branch = parse_statement(tokens)
-    else_branch = None
-    if peek(tokens) == 'else':
-        advance(tokens)
-        else_branch = parse_statement(tokens)
-    return {"node": "If", "condition": condition,
-            "thenBranch": then_branch, "elseBranch": else_branch}
+Состояние парсера удобно хранить в глобальных переменных (или в классе `Parser`): вектор токенов и индекс текущего токена.
+
+```cpp
+#include "json.hpp"
+using json = nlohmann::json;
+
+std::vector<json> tokens;   // загружен из tokens.lst
+size_t pos = 0;
+
+const json& peek()    { return tokens[pos]; }
+const json& advance() { return tokens[pos++]; }
+
+bool isTok(const std::string& value) {
+    return peek()["value"] == value && peek()["type"] != "IDENT";
+}
+
+void expect(const std::string& value) {
+    if (!isTok(value))
+        throw std::runtime_error("line " + std::to_string(peek()["line"].get<int>())
+                                 + ": expected '" + value + "'");
+    advance();
+}
+
+json parseIfStmt() {
+    expect("if");
+    json condition = parseCondition();
+    expect("then");
+    json thenBranch = parseStatement();
+    json elseBranch = nullptr;
+    if (isTok("else")) {
+        advance();
+        elseBranch = parseStatement();
+    }
+    return {
+        {"node", "If"},
+        {"condition", condition},
+        {"thenBranch", thenBranch},
+        {"elseBranch", elseBranch}
+    };
+}
 ```
 
 Таблица символов заполняется по ходу разбора `const_part`, `var_part`, `param_list` — сразу с проверкой на дублирование имени в текущей области видимости.
@@ -314,7 +361,7 @@ end main
 ### 3.2 Правила трансляции
 
 - `integer`, `boolean` → `dw` (2 байта; `false` = 0, `true` = 1)
-- `const` → директива `equ`: `Limit equ 10`
+- `const` → директива `equ`: `Limit equ 10` (boolean-константы: `true` → `1`, `false` → `0`)
 - Обычный параметр → в стек кладётся **значение** (`push [var]`), внутри процедуры читается как `[bp+N]`
 - **Var-параметр** (`isVar: true`) → в стек кладётся **адрес** (`lea ax, var` / `push ax`); внутри процедуры: `mov bx, [bp+N]` (прочитать адрес), затем `[bx]` — косвенное чтение/запись значения
 - `if`/сравнение → `cmp` + условный переход на **противоположное** условие (чтобы перепрыгнуть через then-ветку):
@@ -330,6 +377,12 @@ end main
 
 - Каждый `if` — уникальные метки (`else_1`, `endif_1`, `else_2`, ...), счётчик сквозной по всей программе
 - Процедуры: пролог `push bp` / `mov bp, sp`, эпилог `pop bp` / `ret N` (N — суммарный размер параметров в байтах, для очистки стека)
+
+### 3.3 Подсказки для C++
+
+- Вывод ассемблера — через `std::ostringstream` или `std::ofstream`, по одной функции `genStatement(const json&)`, `genExpr(const json&)` на группу узлов; диспетчеризация по `node["node"].get<std::string>()`.
+- Счётчик меток — обычная глобальная переменная `int labelCounter = 0;`.
+- Таблицу символов удобно загрузить в `std::map<std::pair<std::string,std::string>, json>` (ключ: имя + scope) для быстрого поиска «это var-параметр?».
 
 ---
 
@@ -369,3 +422,45 @@ end.
 1. Каждый пишет свой модуль **независимо**, ориентируясь только на разделы "Вход"/"Выход" своей части
 2. Тестировать на примере из раздела 4
 3. Финальная интеграция: прогнать `example.pas` через все три модуля подряд и убедиться, что на выходе получается рабочий `.asm`
+
+---
+
+## 6. Общие правила для C++ (новый раздел)
+
+### 6.1 Структура папки проекта
+```
+project/
+├── json.hpp          # nlohmann/json, один файл, общий для всех
+├── lexer.cpp
+├── parser.cpp
+├── codegen.cpp
+├── example.pas
+└── SPEC.md
+```
+`json.hpp` подключается как `#include "json.hpp"` (в кавычках, не в угловых скобках).
+
+### 6.2 Стандарт и флаги
+C++17, компилятор `g++` (или `clang++`), флаги `-std=c++17 -Wall`. Код не должен зависеть от платформы (Windows/Linux).
+
+### 6.3 Аргументы командной строки
+| Программа | Аргументы | Выходные файлы |
+|---|---|---|
+| `lexer` | `<файл.pas>` | `tokens.lst` |
+| `parser` | `<tokens.lst>` | `tree.json`, `symbols.tab` |
+| `codegen` | `<tree.json> <symbols.tab>` | `program.asm` |
+
+Если аргументов не хватает — вывести usage в `stderr` и вернуть `1`.
+
+### 6.4 Обработка ошибок
+- Внутри модуля ошибки — через `throw std::runtime_error("line N: ...")`.
+- В `main` один `try/catch`, который печатает сообщение в `stderr` с префиксом модуля (`lexer:`, `parser:`, `codegen:`) и возвращает `1`.
+- При успехе `main` возвращает `0`.
+
+### 6.5 Запись JSON
+Записывать с отступом: `file << j.dump(2);` — так файлы удобно читать глазами при отладке.
+
+### 6.6 Типичные ошибки при работе с nlohmann/json
+- Доступ к полю как строке: `node["name"].get<std::string>()`, как к числу: `node["value"].get<int>()`, как к bool: `node["value"].get<bool>()`.
+- Проверка типа узла: `node["node"] == "If"`.
+- Если обратиться через `[]` к несуществующему полю константного `json`, будет падение. Для необязательных полей использовать `node.contains("paramsSignature")` или `node.value("field", default)`.
+- Присваивание `nullptr` создаёт JSON `null`; проверка: `node["elseBranch"].is_null()`.
