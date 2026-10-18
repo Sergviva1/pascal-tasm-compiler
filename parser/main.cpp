@@ -85,6 +85,18 @@ class Parser
 public:
     explicit Parser(const json& tokens) : tokens_(tokens) {}
 
+    json parseProgram()
+    {
+        const auto name = parseProgramHeader();
+        const auto block = parseBlock(true);
+        expect("DELIM", ".");
+        if (!isType("EOF"))
+        {
+            fail("unexpected token after program end");
+        }
+        return {{"node", "Program"}, {"name", name}, {"block", block}};
+    }
+
     std::string parseProgramHeader()
     {
         expect("KEYWORD", "program");
@@ -138,6 +150,18 @@ private:
     const json& tokens_;
     std::size_t pos_ = 0;
     json symbols_ = json::array();
+    std::string scope_ = "global";
+    // Separate scope identity from its serialized name (a procedure may be named global).
+    std::size_t scopeId_ = 0;
+    std::size_t nextScopeId_ = 1;
+    std::vector<std::size_t> symbolScopes_;
+
+    struct Expression
+    {
+        json node;
+        std::string type;
+        bool mutableVariable = false;
+    };
 
     struct DeclaredName
     {
@@ -158,20 +182,37 @@ private:
         return name;
     }
 
-    void declareGlobal(const DeclaredName& identifier, const std::string& kind,
-                       const std::string& type, const json& value)
+    std::size_t declareSymbol(const DeclaredName& identifier, const std::string& kind,
+                              const json& type, const json& value, bool isVar = false)
     {
-        for (const auto& symbol : symbols_)
+        for (std::size_t i = 0; i < symbols_.size(); ++i)
         {
-            if (symbol.at("scope").get<std::string>() == "global" &&
-                nameKey(symbol.at("name").get<std::string>()) == nameKey(identifier.name))
+            if (symbolScopes_.at(i) == scopeId_ &&
+                nameKey(symbols_.at(i).at("name").get<std::string>()) == nameKey(identifier.name))
             {
-                throw std::runtime_error("line " + std::to_string(identifier.line) +
-                                         ": duplicate declaration of '" + identifier.name + "'");
+                failAt(identifier.line, "duplicate declaration of '" + identifier.name + "'");
             }
         }
         symbols_.push_back({{"name", identifier.name}, {"kind", kind}, {"type", type},
-                            {"isVar", false}, {"scope", "global"}, {"value", value}});
+                            {"isVar", isVar}, {"scope", scope_}, {"value", value}});
+        symbolScopes_.push_back(scopeId_);
+        return symbols_.size() - 1;
+    }
+
+    json resolve(const DeclaredName& identifier) const
+    {
+        for (const auto wantedScope : {scopeId_, std::size_t{0}})
+        {
+            for (std::size_t i = 0; i < symbols_.size(); ++i)
+            {
+                if (symbolScopes_.at(i) == wantedScope &&
+                    nameKey(symbols_.at(i).at("name").get<std::string>()) == nameKey(identifier.name))
+                {
+                    return symbols_.at(i);
+                }
+            }
+        }
+        failAt(identifier.line, "undeclared identifier '" + identifier.name + "'");
     }
 
     DeclaredName readDeclaredName()
@@ -189,12 +230,9 @@ private:
         return advance().at("value").get<std::string>();
     }
 
-    json parseConstDeclaration()
+    json parseLiteral()
     {
-        const auto identifier = readDeclaredName();
-        expect("OP", "=");
         json value;
-        std::string type;
         if (isType("INT_LITERAL"))
         {
             const auto text = peek().at("value").get<std::string>();
@@ -212,7 +250,6 @@ private:
                 fail("integer literal is outside int range");
             }
             value = number;
-            type = "integer";
             advance();
         }
         else if (isType("BOOL_LITERAL"))
@@ -223,15 +260,23 @@ private:
                 fail("invalid boolean literal '" + text + "'");
             }
             value = (text == "true");
-            type = "boolean";
             advance();
         }
         else
         {
             fail("expected an integer or boolean constant literal");
         }
+        return value;
+    }
+
+    json parseConstDeclaration()
+    {
+        const auto identifier = readDeclaredName();
+        expect("OP", "=");
+        const auto value = parseLiteral();
+        const std::string type = value.is_boolean() ? "boolean" : "integer";
         expect("DELIM", ";");
-        declareGlobal(identifier, "const", type, value);
+        declareSymbol(identifier, "const", type, value);
         return {{"node", "ConstDecl"}, {"name", identifier.name},
                 {"type", type}, {"value", value}};
     }
@@ -251,10 +296,288 @@ private:
         json names = json::array();
         for (const auto& identifier : identifiers)
         {
-            declareGlobal(identifier, "var", type, nullptr);
+            declareSymbol(identifier, "var", type, nullptr);
             names.push_back(identifier.name);
         }
         return {{"node", "VarDecl"}, {"names", names}, {"type", type}};
+    }
+
+    json parseBlock(bool allowProcedures)
+    {
+        json block = parseGlobalDeclarations();
+        while (isToken("KEYWORD", "procedure"))
+        {
+            if (!allowProcedures)
+            {
+                fail("nested procedures are not supported");
+            }
+            block.at("procs").push_back(parseProcedure());
+        }
+        expect("KEYWORD", "begin");
+        block.at("body") = parseStatementList();
+        expect("KEYWORD", "end");
+        return block;
+    }
+
+    json parseProcedure()
+    {
+        expect("KEYWORD", "procedure");
+        const auto identifier = readDeclaredName();
+        const auto procIndex = declareSymbol(identifier, "proc", nullptr, nullptr);
+        scope_ = identifier.name;
+        scopeId_ = nextScopeId_++;
+        expect("DELIM", "(");
+        json params = json::array();
+        json signature = json::array();
+        if (!isToken("DELIM", ")"))
+        {
+            do
+            {
+                bool isVar = false;
+                if (isToken("KEYWORD", "var"))
+                {
+                    advance();
+                    isVar = true;
+                }
+                std::vector<DeclaredName> identifiers{readDeclaredName()};
+                while (isToken("DELIM", ","))
+                {
+                    advance();
+                    identifiers.push_back(readDeclaredName());
+                }
+                expect("DELIM", ":");
+                const auto type = parseType();
+                json names = json::array();
+                for (const auto& parameter : identifiers)
+                {
+                    declareSymbol(parameter, "param", type, nullptr, isVar);
+                    names.push_back(parameter.name);
+                    signature.push_back({{"type", type}, {"isVar", isVar}});
+                }
+                params.push_back({{"node", "Param"}, {"names", names},
+                                  {"type", type}, {"isVar", isVar}});
+                if (!isToken("DELIM", ";"))
+                {
+                    break;
+                }
+                advance();
+            } while (true);
+        }
+        expect("DELIM", ")");
+        expect("DELIM", ";");
+        // Complete the signature before the body to allow recursion.
+        symbols_.at(procIndex)["paramsSignature"] = signature;
+        const auto block = parseBlock(false);
+        expect("DELIM", ";");
+        scope_ = "global";
+        scopeId_ = 0;
+        return {{"node", "ProcDecl"}, {"name", identifier.name},
+                {"params", params}, {"block", block}};
+    }
+
+    json parseStatementList()
+    {
+        json statements = json::array();
+        // Empty blocks and a trailing semicolon are accepted as in Pascal.
+        if (isToken("KEYWORD", "end"))
+        {
+            return statements;
+        }
+        statements.push_back(parseStatement());
+        while (isToken("DELIM", ";"))
+        {
+            advance();
+            if (isToken("KEYWORD", "end"))
+            {
+                break;
+            }
+            statements.push_back(parseStatement());
+        }
+        return statements;
+    }
+
+    json parseStatement()
+    {
+        if (isToken("KEYWORD", "begin"))
+        {
+            advance();
+            const auto statements = parseStatementList();
+            expect("KEYWORD", "end");
+            return {{"node", "Compound"}, {"statements", statements}};
+        }
+        if (isToken("KEYWORD", "if"))
+        {
+            advance();
+            const auto left = parseExpression();
+            const int line = peek().at("line").get<int>();
+            const auto op = peek().at("value").get<std::string>();
+            if (!isType("OP") || (op != "=" && op != "<>" && op != "<" &&
+                op != ">" && op != "<=" && op != ">="))
+            {
+                fail("expected a comparison operator");
+            }
+            advance();
+            const auto right = parseExpression();
+            if (left.type != right.type)
+            {
+                failAt(line, "comparison operands have incompatible types");
+            }
+            expect("KEYWORD", "then");
+            const auto thenBranch = parseStatement();
+            json elseBranch = nullptr;
+            if (isToken("KEYWORD", "else"))
+            {
+                advance();
+                elseBranch = parseStatement();
+            }
+            return {{"node", "If"},
+                    {"condition", {{"node", "Compare"}, {"op", op},
+                                   {"left", left.node}, {"right", right.node}}},
+                    {"thenBranch", thenBranch}, {"elseBranch", elseBranch}};
+        }
+        if (!isType("IDENT"))
+        {
+            fail("expected a statement");
+        }
+        const auto identifier = readDeclaredName();
+        const auto symbol = resolve(identifier);
+        const auto kind = symbol.at("kind").get<std::string>();
+        const auto name = symbol.at("name").get<std::string>();
+        if (isToken("OP", ":="))
+        {
+            if (kind != "var" && kind != "param")
+            {
+                failAt(identifier.line, "cannot assign to '" + identifier.name + "'");
+            }
+            advance();
+            const auto expr = parseExpression();
+            if (expr.type != symbol.at("type").get<std::string>())
+            {
+                failAt(identifier.line, "assignment has incompatible types");
+            }
+            return {{"node", "Assign"}, {"target", name}, {"expr", expr.node}};
+        }
+        if (kind != "proc")
+        {
+            failAt(identifier.line, "'" + identifier.name + "' is not a procedure");
+        }
+        std::vector<Expression> arguments;
+        if (isToken("DELIM", "("))
+        {
+            advance();
+            if (!isToken("DELIM", ")"))
+            {
+                arguments.push_back(parseExpression());
+                while (isToken("DELIM", ","))
+                {
+                    advance();
+                    arguments.push_back(parseExpression());
+                }
+            }
+            expect("DELIM", ")");
+        }
+        const auto& signature = symbol.at("paramsSignature");
+        if (arguments.size() != signature.size())
+        {
+            failAt(identifier.line, "wrong number of arguments to '" + name + "'");
+        }
+        json args = json::array();
+        for (std::size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (arguments.at(i).type != signature.at(i).at("type").get<std::string>())
+            {
+                failAt(identifier.line, "argument " + std::to_string(i + 1) + " has incompatible type");
+            }
+            if (signature.at(i).at("isVar").get<bool>() && !arguments.at(i).mutableVariable)
+            {
+                failAt(identifier.line, "argument " + std::to_string(i + 1) +
+                       " for var-parameter must be a mutable variable");
+            }
+            args.push_back(arguments.at(i).node);
+        }
+        return {{"node", "ProcCall"}, {"name", name}, {"args", args}};
+    }
+
+    Expression parseExpression()
+    {
+        auto left = parseTerm();
+        while (isToken("OP", "+") || isToken("OP", "-"))
+        {
+            const int line = peek().at("line").get<int>();
+            const auto op = advance().at("value").get<std::string>();
+            left = binary(left, op, parseTerm(), line);
+        }
+        return left;
+    }
+
+    Expression parseTerm()
+    {
+        auto left = parseFactor();
+        while (isToken("OP", "*") || isToken("KEYWORD", "div") || isToken("KEYWORD", "mod"))
+        {
+            const int line = peek().at("line").get<int>();
+            const auto op = advance().at("value").get<std::string>();
+            left = binary(left, op, parseFactor(), line);
+        }
+        return left;
+    }
+
+    Expression binary(const Expression& left, const std::string& op,
+                      const Expression& right, int line) const
+    {
+        if (left.type != "integer" || right.type != "integer")
+        {
+            failAt(line, "arithmetic operands must be integer");
+        }
+        return {{{"node", "BinOp"}, {"op", op}, {"left", left.node}, {"right", right.node}},
+                "integer", false};
+    }
+
+    Expression parseFactor()
+    {
+        if (isToken("OP", "-"))
+        {
+            const int line = advance().at("line").get<int>();
+            const auto operand = parseFactor();
+            if (operand.type != "integer")
+            {
+                failAt(line, "unary minus requires an integer");
+            }
+            return {{{"node", "UnaryMinus"}, {"operand", operand.node}}, "integer", false};
+        }
+        if (isToken("DELIM", "("))
+        {
+            advance();
+            const auto expr = parseExpression();
+            expect("DELIM", ")");
+            return expr;
+        }
+        if (isType("IDENT"))
+        {
+            const auto identifier = readDeclaredName();
+            const auto symbol = resolve(identifier);
+            const auto kind = symbol.at("kind").get<std::string>();
+            if (kind == "proc")
+            {
+                failAt(identifier.line, "a procedure cannot be used as a value");
+            }
+            return {{{"node", kind == "const" ? "ConstRef" : "VarRef"},
+                     {"name", symbol.at("name").get<std::string>()}},
+                    symbol.at("type").get<std::string>(), kind != "const"};
+        }
+        if (isType("INT_LITERAL") || isType("BOOL_LITERAL"))
+        {
+            const auto literal = parseLiteral();
+            const auto type = literal.is_boolean() ? "boolean" : "integer";
+            return {{{"node", literal.is_boolean() ? "BoolLiteral" : "IntLiteral"},
+                     {"value", literal}}, type, false};
+        }
+        fail("expected an expression");
+    }
+
+    [[noreturn]] static void failAt(int line, const std::string& message)
+    {
+        throw std::runtime_error("line " + std::to_string(line) + ": " + message);
     }
 
     const json& peek() const
@@ -330,6 +653,11 @@ int main(int argc, char* argv[])
         try
         {
             jsonFile >> jsonData;
+            jsonFile >> std::ws;
+            if (jsonFile.peek() != std::char_traits<char>::eof())
+            {
+                throw std::runtime_error("Unexpected data after the JSON token array");
+            }
         }
         catch (const json::parse_error& error)
         {
@@ -339,15 +667,27 @@ int main(int argc, char* argv[])
         validateTokens(jsonData);
 
         Parser parser(jsonData);
-        const std::string programName = parser.parseProgramHeader();
+        const json tree = parser.parseProgram();
 
-        const json declarations = parser.parseGlobalDeclarations();
-
-        // Do not write output files until the entire program has been checked.
-        std::cout << "Program header parsed: " << programName << '\n';
-        std::cout << "Global declarations:\n" << declarations.dump(2) << '\n';
-        std::cout << "Symbols:\n" << parser.symbols().dump(2) << '\n';
-        std::cout << "Procedure and statement parsing is not implemented yet.\n";
+        // All syntax and semantic checks finish before any output is opened.
+        std::ofstream treeFile("tree.json");
+        if (!treeFile)
+        {
+            throw std::runtime_error("Could not open tree.json for writing");
+        }
+        std::ofstream symbolsFile("symbols.tab");
+        if (!symbolsFile)
+        {
+            throw std::runtime_error("Could not open symbols.tab for writing");
+        }
+        treeFile << tree.dump(2);
+        symbolsFile << parser.symbols().dump(2);
+        treeFile.close();
+        symbolsFile.close();
+        if (!treeFile || !symbolsFile)
+        {
+            throw std::runtime_error("Could not write parser output files");
+        }
         return 0;
     }
     catch (const std::exception& error)
