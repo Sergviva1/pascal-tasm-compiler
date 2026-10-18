@@ -60,7 +60,7 @@ void CodeGenerator::generateIf(const Json& statement) {
 
 void CodeGenerator::generateCall(const Json& call) {
     const std::string requestedName = call.at("name").get<std::string>();
-    const auto procedureIt = symbolIndex_.find(symbolKey("global", requestedName));
+    const auto procedureIt = symbolIndex_.find(symbolKey("", requestedName));
     if (procedureIt == symbolIndex_.end() || procedureIt->second->at("kind") != "proc") {
         throw std::runtime_error("unknown procedure '" + requestedName + "'");
     }
@@ -82,7 +82,7 @@ void CodeGenerator::generateCall(const Json& call) {
         }
         output_ << "    push ax\n";
     }
-    output_ << "    call " << procedure.at("name").get<std::string>() << "\n";
+    output_ << "    call " << asmName(procedure) << "\n";
 }
 
 } // namespace pascal
