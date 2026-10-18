@@ -78,6 +78,76 @@ void validateTokens(const json& tokens)
     }
 }
 
+// The input must pass validateTokens() before constructing a Parser.
+class Parser
+{
+public:
+    explicit Parser(const json& tokens) : tokens_(tokens) {}
+
+    std::string parseProgramHeader()
+    {
+        expect("KEYWORD", "program");
+        const std::string name = expectIdentifier();
+        expect("DELIM", ";");
+        return name;
+    }
+
+private:
+    const json& tokens_;
+    std::size_t pos_ = 0;
+
+    const json& peek() const
+    {
+        return tokens_.at(pos_);
+    }
+
+    bool isType(const std::string& type) const
+    {
+        return peek().at("type").get<std::string>() == type;
+    }
+
+    bool isToken(const std::string& type, const std::string& value) const
+    {
+        return isType(type) && peek().at("value").get<std::string>() == value;
+    }
+
+    [[noreturn]] void fail(const std::string& message) const
+    {
+        throw std::runtime_error("line " + std::to_string(peek().at("line").get<int>()) +
+                                 ": " + message);
+    }
+
+    const json& advance()
+    {
+        const auto& token = peek();
+        // Never move past EOF: truncated input must produce a syntax error,
+        // not an out-of-range access on the next peek().
+        if (!isType("EOF"))
+        {
+            ++pos_;
+        }
+        return token;
+    }
+
+    void expect(const std::string& type, const std::string& value)
+    {
+        if (!isToken(type, value))
+        {
+            fail("expected '" + value + "'");
+        }
+        advance();
+    }
+
+    std::string expectIdentifier()
+    {
+        if (!isType("IDENT"))
+        {
+            fail("expected an identifier");
+        }
+        return advance().at("value").get<std::string>();
+    }
+};
+
 int main(int argc, char* argv[])
 {
     if (argc < 2)
@@ -106,8 +176,12 @@ int main(int argc, char* argv[])
 
         validateTokens(jsonData);
 
-        // Temporary debug output; Pascal parsing will be added next.
-        std::cout << "Parsed JSON data:\n" << jsonData.dump(4) << '\n';
+        Parser parser(jsonData);
+        const std::string programName = parser.parseProgramHeader();
+
+        // Only the header is parsed at this stage; do not write a partial AST.
+        std::cout << "Program header parsed: " << programName << '\n';
+        std::cout << "Block parsing is not implemented yet.\n";
         return 0;
     }
     catch (const std::exception& error)
