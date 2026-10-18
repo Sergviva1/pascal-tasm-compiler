@@ -41,7 +41,7 @@ program.pas → [1. Лексер] → tokens.lst → [2. Синт. анализ�
 mkdir -p build
 g++ -std=c++17 -O2 -Wall -I. -o build/lexer.exe lexer/main.cpp
 g++ -std=c++17 -O2 -Wall -I. -o build/parser.exe parser/main.cpp
-g++ -std=c++17 -O2 -Wall -I. -o build/codegen.exe codegen/main.cpp
+g++ -std=c++17 -O2 -Wall -I. -o build/codegen.exe codegen/main.cpp codegen/code_generator.cpp codegen/code_generator_statements.cpp codegen/code_generator_expressions.cpp
 ```
 
 Пример вызова всей цепочки из терминала:
@@ -435,7 +435,12 @@ project/
 ├── CMakeLists.txt    # необязательная сборка через CMake
 ├── lexer/main.cpp
 ├── parser/main.cpp
-├── codegen/main.cpp
+├── codegen/
+│   ├── main.cpp                       # аргументы командной строки и файлы
+│   ├── code_generator.hpp             # интерфейс генератора
+│   ├── code_generator.cpp             # программа, символы и процедуры
+│   ├── code_generator_statements.cpp  # операторы и вызовы
+│   └── code_generator_expressions.cpp # выражения и доступ к значениям
 ├── tests/           # example.pas, tokens.lst, tree.json, symbols.tab, fixture_tests.cpp
 ├── third_party/     # сведения о зависимости и лицензия
 └── docs/SPEC С++.md

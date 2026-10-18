@@ -10,10 +10,19 @@ else()
     target_compile_options(project_options INTERFACE -Wall -Wextra -Wpedantic)
 endif()
 
-foreach(module IN ITEMS lexer parser codegen)
-    add_executable(${module} ${module}/main.cpp)
-    target_link_libraries(${module} PRIVATE project_options)
-    set_target_properties(${module} PROPERTIES CXX_EXTENSIONS OFF)
+add_executable(lexer lexer/main.cpp)
+add_executable(parser parser/main.cpp)
+add_executable(pascal_codegen
+    codegen/main.cpp
+    codegen/code_generator.cpp
+    codegen/code_generator_statements.cpp
+    codegen/code_generator_expressions.cpp
+)
+set_target_properties(pascal_codegen PROPERTIES OUTPUT_NAME codegen)
+
+foreach(target IN ITEMS lexer parser pascal_codegen)
+    target_link_libraries(${target} PRIVATE project_options)
+    set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
 endforeach()
 
 include(CTest)

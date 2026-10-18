@@ -4,7 +4,7 @@
 
 Поддерживаемые по ТЗ конструкции: `integer`, `boolean`, константы, процедуры, параметры по значению и по ссылке (`var`), `if/then/else`, сравнения и арифметика. Циклы, массивы, строки, функции и вложенные процедуры не входят в язык.
 
-**Статус:** проект подготовлен к разработке на C++; три модуля пока являются собираемыми заглушками. Они печатают usage при неверных аргументах, иначе — `not implemented yet`, возвращают `1` и не создают выходных файлов. Успешная сборка и проверка фикстур пока не означают, что компилятор реализован.
+**Статус:** кодогенератор реализован и проверен на эталонном AST; проверка с помощью TASM/TLINK ещё не выполнена. Лексер и парсер пока являются собираемыми заглушками. Полная цепочка компиляции заработает после реализации этих двух модулей.
 
 ## Спецификация и структура
 
@@ -17,7 +17,7 @@ program.pas → [lexer] → tokens.lst → [parser] → tree.json + symbols.tab 
 ```text
 lexer/main.cpp       лексический анализатор (§1 ТЗ)
 parser/main.cpp      синтаксический/семантический анализатор (§2)
-codegen/main.cpp     генератор TASM (§3)
+codegen/             исходники генератора TASM (§3), точка входа — main.cpp
 json.hpp            nlohmann/json 3.11.3, общий заголовок
 third_party/        сведения о зависимости и лицензия
 tests/              исходник примера, эталонные JSON-файлы, проверка фикстур
@@ -43,7 +43,7 @@ Python не требуется.
 mkdir -p build
 g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. -o build/lexer.exe lexer/main.cpp
 g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. -o build/parser.exe parser/main.cpp
-g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. -o build/codegen.exe codegen/main.cpp
+g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. -o build/codegen.exe codegen/main.cpp codegen/code_generator.cpp codegen/code_generator_statements.cpp codegen/code_generator_expressions.cpp
 g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -I. -o build/fixture_tests.exe tests/fixture_tests.cpp
 
 ./build/fixture_tests.exe tests
