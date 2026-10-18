@@ -3,6 +3,7 @@
 #include <cctype>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace pascal {
 
@@ -17,7 +18,7 @@ std::string CodeGenerator::generate() {
     const Json& block = tree_.at("block");
     requireNode(block, "Block");
 
-    output_ << ".model small\n"
+    output_ << ".model small, nearstack\n"
             << ".stack 100h\n\n"
             << ".data\n";
     generateData(block);
@@ -25,9 +26,22 @@ std::string CodeGenerator::generate() {
     output_ << "\n.code\n"
             << "main proc\n"
             << "    mov ax, @data\n"
-            << "    mov ds, ax\n\n";
+            << "    mov ds, ax\n"
+            // Rebase the DOS-provided stack into DGROUP, preserving its physical
+            // address: new SP = old SP + 16 * (old SS - DGROUP).
+            // This makes all two-byte var pointers valid through either DS or SS.
+            << "    mov bx, ss\n"
+            << "    sub bx, ax\n"
+            << "    shl bx, 1\n"
+            << "    shl bx, 1\n"
+            << "    shl bx, 1\n"
+            << "    shl bx, 1\n"
+            << "    cli\n"
+            << "    mov ss, ax\n"
+            << "    add sp, bx\n"
+            << "    sti\n\n";
 
-    currentScope_ = "global";
+    currentScope_.clear();
     for (const auto& statement : block.at("body")) {
         generateStatement(statement);
     }
@@ -66,13 +80,69 @@ void CodeGenerator::indexSymbols() {
         throw std::runtime_error("symbol table must be a JSON array");
     }
 
-    for (const auto& symbol : symbols_) {
-        const std::string name = symbol.at("name").get<std::string>();
-        const std::string scope = symbol.at("scope").get<std::string>();
-        const std::string key = symbolKey(scope, name);
-        if (!symbolIndex_.emplace(key, &symbol).second) {
-            throw std::runtime_error("duplicate symbol '" + name + "' in scope '" + scope + "'");
+    // The serialized scope "global" can mean both the root and a procedure.
+    // Match table rows to AST declarations, then index by the unambiguous AST scope.
+    requireNode(tree_, "Program");
+    std::vector<bool> used(symbols_.size(), false);
+    auto add = [&](const Json& expected, const std::string& scope) {
+        const std::string name = expected.at("name").get<std::string>();
+        for (std::size_t i = 0; i < symbols_.size(); ++i) {
+            if (used[i]) continue;
+            const Json& symbol = symbols_.at(i);
+            bool matches = symbol.is_object();
+            for (auto field = expected.begin(); matches && field != expected.end(); ++field) {
+                matches = symbol.contains(field.key()) && symbol.at(field.key()) == field.value();
+            }
+            if (!matches) continue;
+            if (!symbolIndex_.emplace(symbolKey(scope, name), &symbol).second) {
+                throw std::runtime_error("duplicate symbol '" + name + "'");
+            }
+            used[i] = true;
+            globalSymbols_[&symbol] = scope.empty();
+            const std::string kind = expected.at("kind").get<std::string>();
+            const std::string prefix = kind == "proc" ? "cg_proc_" :
+                                       kind == "const" ? "cg_const_" : "cg_var_";
+            asmNames_[&symbol] = prefix + std::to_string(asmNames_.size());
+            return;
         }
+        throw std::runtime_error("missing or inconsistent symbol '" + name + "'");
+    };
+    auto record = [](const std::string& name, const std::string& kind, const Json& type,
+                     const std::string& scope, const Json& value, bool isVar = false) {
+        return Json{{"name", name}, {"kind", kind}, {"type", type},
+                    {"scope", scope}, {"value", value}, {"isVar", isVar}};
+    };
+    auto declarations = [&](const Json& block, const std::string& scope) {
+        const std::string serializedScope = scope.empty() ? "global" : scope;
+        for (const auto& constant : block.at("consts")) {
+            add(record(constant.at("name"), "const", constant.at("type"),
+                       serializedScope, constant.at("value")), scope);
+        }
+        for (const auto& variable : block.at("vars")) {
+            for (const auto& name : variable.at("names")) {
+                add(record(name, "var", variable.at("type"), serializedScope, nullptr), scope);
+            }
+        }
+    };
+    const Json& block = tree_.at("block");
+    declarations(block, "");
+    for (const auto& procedure : block.at("procs")) {
+        const std::string name = procedure.at("name");
+        Json signature = Json::array();
+        for (const auto& parameter : procedure.at("params")) {
+            for (const auto& parameterName : parameter.at("names")) {
+                add(record(parameterName, "param", parameter.at("type"), name,
+                           nullptr, parameter.at("isVar")), name);
+                signature.push_back({{"type", parameter.at("type")}, {"isVar", parameter.at("isVar")}});
+            }
+        }
+        Json symbol = record(name, "proc", nullptr, "global", nullptr);
+        symbol["paramsSignature"] = signature;
+        add(symbol, "");
+        declarations(procedure.at("block"), name);
+    }
+    for (bool matched : used) {
+        if (!matched) throw std::runtime_error("symbol table contains duplicate or undeclared entries");
     }
 }
 
@@ -121,18 +191,26 @@ void CodeGenerator::indexProcedureFrames() {
 }
 
 const CodeGenerator::Json& CodeGenerator::findSymbol(const std::string& name) const {
-    if (currentScope_ != "global") {
+    if (!currentScope_.empty()) {
         const auto local = symbolIndex_.find(symbolKey(currentScope_, name));
         if (local != symbolIndex_.end()) {
             return *local->second;
         }
     }
 
-    const auto global = symbolIndex_.find(symbolKey("global", name));
+    const auto global = symbolIndex_.find(symbolKey("", name));
     if (global != symbolIndex_.end()) {
         return *global->second;
     }
     throw std::runtime_error("unknown symbol '" + name + "'");
+}
+
+bool CodeGenerator::isGlobal(const Json& symbol) const {
+    return globalSymbols_.at(&symbol);
+}
+
+const std::string& CodeGenerator::asmName(const Json& symbol) const {
+    return asmNames_.at(&symbol);
 }
 
 const CodeGenerator::ProcedureFrame& CodeGenerator::currentFrame() const {
@@ -177,13 +255,13 @@ std::string CodeGenerator::valueText(const Json& value, const std::string& type)
 void CodeGenerator::generateData(const Json& block) {
     for (const auto& constant : block.at("consts")) {
         requireNode(constant, "ConstDecl");
-        output_ << "    " << constant.at("name").get<std::string>() << " equ "
+        output_ << "    " << asmName(findSymbol(constant.at("name"))) << " equ "
                 << valueText(constant.at("value"), constant.at("type").get<std::string>()) << '\n';
     }
     for (const auto& declaration : block.at("vars")) {
         requireNode(declaration, "VarDecl");
         for (const auto& name : declaration.at("names")) {
-            output_ << "    " << name.get<std::string>() << " dw ?\n";
+            output_ << "    " << asmName(findSymbol(name)) << " dw ?\n";
         }
     }
 }
@@ -196,6 +274,7 @@ void CodeGenerator::generateProcedure(const Json& procedure) {
         throw std::runtime_error("missing frame for procedure '" + name + "'");
     }
     const ProcedureFrame& frame = frameIt->second;
+    const std::string assemblyName = asmName(*symbolIndex_.at(symbolKey("", name)));
 
     const Json& block = procedure.at("block");
     requireNode(block, "Block");
@@ -203,7 +282,7 @@ void CodeGenerator::generateProcedure(const Json& procedure) {
         throw std::runtime_error("nested procedures are not supported");
     }
 
-    output_ << "\n" << name << " proc\n"
+    output_ << "\n" << assemblyName << " proc\n"
             << "    push bp\n"
             << "    mov bp, sp\n";
     if (frame.localBytes != 0) {
@@ -226,7 +305,7 @@ void CodeGenerator::generateProcedure(const Json& procedure) {
     } else {
         output_ << "    ret " << frame.parameterBytes << "\n";
     }
-    output_ << name << " endp\n";
+    output_ << assemblyName << " endp\n";
 }
 
 } // namespace pascal

@@ -30,8 +30,11 @@ private:
     const Json& symbols_;
     std::unordered_map<std::string, const Json*> symbolIndex_;
     std::unordered_map<std::string, ProcedureFrame> frames_;
+    std::unordered_map<const Json*, std::string> asmNames_;
+    std::unordered_map<const Json*, bool> globalSymbols_;
     std::ostringstream output_;
-    std::string currentScope_ = "global";
+    // Empty string identifies the root scope; a procedure named global is distinct.
+    std::string currentScope_;
     int labelCounter_ = 0;
 
     static std::string lower(std::string value);
@@ -43,6 +46,8 @@ private:
     void indexSymbols();
     void indexProcedureFrames();
     const Json& findSymbol(const std::string& name) const;
+    bool isGlobal(const Json& symbol) const;
+    const std::string& asmName(const Json& symbol) const;
     const ProcedureFrame& currentFrame() const;
     int stackOffset(const std::string& name) const;
 

@@ -30,8 +30,14 @@ if(BUILD_TESTING)
     add_executable(fixture_tests tests/fixture_tests.cpp)
     add_executable(parser_declaration_tests parser/declaration_tests.cpp)
     add_executable(parser_tests parser/parser_tests.cpp)
+    add_executable(codegen_regression_tests
+        tests/codegen_regression_tests.cpp
+        codegen/code_generator.cpp
+        codegen/code_generator_statements.cpp
+        codegen/code_generator_expressions.cpp
+    )
 
-    foreach(test_target IN ITEMS fixture_tests parser_declaration_tests parser_tests)
+    foreach(test_target IN ITEMS fixture_tests parser_declaration_tests parser_tests codegen_regression_tests)
         target_link_libraries(${test_target} PRIVATE project_options)
         set_target_properties(${test_target} PROPERTIES CXX_EXTENSIONS OFF)
     endforeach()
@@ -39,6 +45,7 @@ if(BUILD_TESTING)
     add_test(NAME fixtures COMMAND fixture_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     add_test(NAME parser_declarations COMMAND parser_declaration_tests)
     add_test(NAME parser_semantics COMMAND parser_tests)
+    add_test(NAME codegen_regressions COMMAND codegen_regression_tests)
     set_tests_properties(parser_declarations parser_semantics PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )

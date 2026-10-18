@@ -61,8 +61,8 @@ void CodeGenerator::loadVariable(const std::string& name) {
         throw std::runtime_error("symbol '" + name + "' is not a variable");
     }
 
-    if (symbol.at("scope") == "global") {
-        output_ << "    mov ax, " << symbol.at("name").get<std::string>() << "\n";
+    if (isGlobal(symbol)) {
+        output_ << "    mov ax, " << asmName(symbol) << "\n";
         return;
     }
 
@@ -82,8 +82,8 @@ void CodeGenerator::storeVariable(const std::string& name) {
         throw std::runtime_error("cannot assign to '" + name + "'");
     }
 
-    if (symbol.at("scope") == "global") {
-        output_ << "    mov " << symbol.at("name").get<std::string>() << ", ax\n";
+    if (isGlobal(symbol)) {
+        output_ << "    mov " << asmName(symbol) << ", ax\n";
         return;
     }
 
@@ -103,8 +103,8 @@ void CodeGenerator::loadAddress(const std::string& name) {
         throw std::runtime_error("cannot take address of '" + name + "'");
     }
 
-    if (symbol.at("scope") == "global") {
-        output_ << "    lea ax, " << symbol.at("name").get<std::string>() << "\n";
+    if (isGlobal(symbol)) {
+        output_ << "    lea ax, " << asmName(symbol) << "\n";
         return;
     }
 
