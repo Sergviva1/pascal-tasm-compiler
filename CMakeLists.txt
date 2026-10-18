@@ -28,7 +28,29 @@ endforeach()
 include(CTest)
 if(BUILD_TESTING)
     add_executable(fixture_tests tests/fixture_tests.cpp)
-    target_link_libraries(fixture_tests PRIVATE project_options)
-    set_target_properties(fixture_tests PROPERTIES CXX_EXTENSIONS OFF)
+    add_executable(parser_declaration_tests parser/declaration_tests.cpp)
+    add_executable(parser_tests parser/parser_tests.cpp)
+
+    foreach(test_target IN ITEMS fixture_tests parser_declaration_tests parser_tests)
+        target_link_libraries(${test_target} PRIVATE project_options)
+        set_target_properties(${test_target} PROPERTIES CXX_EXTENSIONS OFF)
+    endforeach()
+
     add_test(NAME fixtures COMMAND fixture_tests "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_test(NAME parser_declarations COMMAND parser_declaration_tests)
+    add_test(NAME parser_semantics COMMAND parser_tests)
+    set_tests_properties(parser_declarations parser_semantics PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+
+    add_test(
+        NAME parser_codegen_integration
+        COMMAND "${CMAKE_COMMAND}"
+            "-DPARSER_EXE=$<TARGET_FILE:parser>"
+            "-DPARSER_TESTS_EXE=$<TARGET_FILE:parser_tests>"
+            "-DCODEGEN_EXE=$<TARGET_FILE:pascal_codegen>"
+            "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+            "-DTEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/parser_codegen_integration"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/parser_codegen_integration.cmake"
+    )
 endif()
