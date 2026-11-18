@@ -1,0 +1,8 @@
+add_library(pascal_codegen generator.cpp)
+target_include_directories(pascal_codegen PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(pascal_codegen PUBLIC pascal_contracts)
+add_executable(codegen_demo demo.cpp)
+target_link_libraries(codegen_demo PRIVATE pascal_codegen)
+if(BUILD_TESTING)
+    add_test(NAME codegen.assignment COMMAND codegen_demo "${CMAKE_CURRENT_BINARY_DIR}/demo.asm")
+endif()

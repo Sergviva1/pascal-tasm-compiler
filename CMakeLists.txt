@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 3.16)
+project(pascal_tasm_compiler LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+include(CTest)
+
+add_library(pascal_contracts INTERFACE)
+target_include_directories(pascal_contracts INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/shared")
+add_subdirectory(lexer)
+add_subdirectory(codegen)
