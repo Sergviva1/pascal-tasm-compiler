@@ -1,48 +1,8 @@
-# Compiler outputs in the project root (keep tests/ fixtures tracked)
-/tokens.lst
-/tree.json
-/symbols.tab
-/program.asm
-
-# C++ build directories and artifacts
+# Локальные материалы напарников: отчёты, поставки инструментов, примеры.
+/check/
 /build/
 /cmake-build-*/
 /out/
 *.o
 *.obj
 *.exe
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.pdb
-*.ilk
-*.idb
-*.exp
-*.tlog
-
-# In-source CMake artifacts
-/CMakeFiles/
-/CMakeCache.txt
-/cmake_install.cmake
-/CTestTestfile.cmake
-/Testing/
-/Makefile
-/build.ninja
-/.ninja_deps
-/.ninja_log
-/compile_commands.json
-
-# IDE / editors
-.vscode/
-.idea/
-.vs/
-*.swp
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Local agent instructions
-AGENTS.md
