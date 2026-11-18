@@ -1,0 +1,9 @@
+Program
+  VarDeclaration: x : integer
+  Block
+    Assignment
+      Target: x
+      IntegerLiteral: 10
+Таблица символов
+Имя | Категория | Тип | Область | Объявление
+x | переменная | integer | глобальная | 2:5

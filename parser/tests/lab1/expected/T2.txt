@@ -1,0 +1,14 @@
+Program
+  VarDeclaration: x : integer
+  VarDeclaration: y : integer
+  Block
+    Assignment
+      Target: x
+      IntegerLiteral: 10
+    Assignment
+      Target: y
+      Variable: x
+Таблица символов
+Имя | Категория | Тип | Область | Объявление
+x | переменная | integer | глобальная | 2:5
+y | переменная | integer | глобальная | 2:8

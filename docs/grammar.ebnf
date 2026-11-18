@@ -1,0 +1,54 @@
+(* Вариант № 10. Предложение на согласование. *)
+(* Стартовое правило полного диалекта — program, подмножества ЛР № 1 — lab1_program. *)
+(* Кавычки обозначают лексемы; IDENTIFIER, DECIMAL_INTEGER и END_OF_FILE — *)
+(* категории токенов из shared/Token.h. HEX_INTEGER — предлагаемая категория ЛР № 2. *)
+
+program = "program", IDENTIFIER, ";", declarations, block, ".", END_OF_FILE ;
+declarations = [ const_section ], [ var_section ], { procedure_decl } ;
+const_section = "const", const_decl, { const_decl } ;
+const_decl = IDENTIFIER, "=", const_value, ";" ;
+const_value = [ "+" | "-" ], integer_literal | boolean_literal ;
+var_section = "var", var_decl, { var_decl } ;
+var_decl = names, ":", type_ref, ";" ;
+names = IDENTIFIER, { ",", IDENTIFIER } ;
+type_ref = "integer" | "boolean" | "^", "integer" ;
+
+procedure_decl = "procedure", IDENTIFIER, [ "(", [ formal_params ], ")" ], ";",
+                 declarations, block, ";" ;
+formal_params = formal_group, { ";", formal_group } ;
+formal_group = names, ":", type_ref ;
+
+block = "begin", [ statement, { ";", statement }, [ ";" ] ], "end" ;
+(* Раздельные правила исключают неоднозначность: else относится к ближайшему if. *)
+statement = closed_statement | open_statement ;
+closed_statement = simple_statement
+                 | "if", expression, "then", closed_statement, "else", closed_statement ;
+open_statement = "if", expression, "then", statement
+               | "if", expression, "then", closed_statement, "else", open_statement ;
+simple_statement = assignment | call | block ;
+assignment = designator, ":=", expression ;
+designator = IDENTIFIER, [ "^" ] ;
+call = IDENTIFIER, "(", [ arguments ], ")" ;
+arguments = expression, { ",", expression } ;
+
+expression = disjunction ;
+disjunction = conjunction, { "or", conjunction } ;
+conjunction = negation, { "and", negation } ;
+negation = "not", negation | comparison ;
+comparison = sum, [ relation, sum ] ;
+relation = "=" | "<>" | "<" | "<=" | ">" | ">=" ;
+sum = product, { ( "+" | "-" ), product } ;
+product = unary, { ( "*" | "div" ), unary } ;
+unary = ( "+" | "-" ), unary | primary ;
+primary = integer_literal | boolean_literal | designator | "@", IDENTIFIER
+        | "(", expression, ")" ;
+integer_literal = DECIMAL_INTEGER | HEX_INTEGER ;
+boolean_literal = "true" | "false" ;
+
+(* Реализуемое подмножество ЛР № 1. *)
+lab1_program = "program", IDENTIFIER, ";", [ lab1_var_section ],
+               lab1_block, ".", END_OF_FILE ;
+lab1_var_section = "var", lab1_var_decl, { lab1_var_decl } ;
+lab1_var_decl = names, ":", "integer", ";" ;
+lab1_block = "begin", [ lab1_assignment, { ";", lab1_assignment }, [ ";" ] ], "end" ;
+lab1_assignment = IDENTIFIER, ":=", ( DECIMAL_INTEGER | IDENTIFIER ) ;
